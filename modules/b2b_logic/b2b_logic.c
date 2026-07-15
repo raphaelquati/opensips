@@ -128,6 +128,7 @@ int b2bl_client_new(struct sip_msg *msg, str *id, str *dest_uri, str *proxy,
 	 void *flags);
 int b2b_handle_reply(struct sip_msg* msg, unsigned int flags);
 int b2b_pass_request(struct sip_msg *msg);
+int b2b_set_body(struct sip_msg *msg, str *body);
 int b2b_delete_entity(struct sip_msg *msg);
 int b2b_end_dlg_leg(struct sip_msg *msg);
 int b2b_send_reply(struct sip_msg *msg, int *code, str *reason, str *headers, str *body);
@@ -267,6 +268,9 @@ static const cmd_export_t cmds[]=
 		{CMD_PARAM_STR|CMD_PARAM_OPT, fixup_reply_flags, NULL}, {0,0,0}},
 		REQUEST_ROUTE},
 	{"b2b_pass_request",(cmd_function)b2b_pass_request, {{0,0,0}},
+		REQUEST_ROUTE},
+	{"b2b_set_body",(cmd_function)b2b_set_body, {
+		{CMD_PARAM_STR|CMD_PARAM_OPT|CMD_PARAM_FIX_NULL,0,0}, {0,0,0}},
 		REQUEST_ROUTE},
 	{"b2b_delete_entity",(cmd_function)b2b_delete_entity, {{0,0,0}},
 		REQUEST_ROUTE},

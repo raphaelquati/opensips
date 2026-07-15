@@ -70,6 +70,58 @@ extern int reply_routeid;
 
 struct b2bl_route_ctx cur_route_ctx;
 
+static str b2bl_route_body_live = {NULL, 0};
+static str b2bl_route_body_override = {NULL, 0};
+
+static inline void b2bl_clear_route_body_override(void)
+{
+	if (b2bl_route_body_override.s) {
+		pkg_free(b2bl_route_body_override.s);
+		b2bl_route_body_override.s = NULL;
+		b2bl_route_body_override.len = 0;
+	}
+}
+
+static int b2bl_set_route_body_override(str *body)
+{
+	b2bl_clear_route_body_override();
+
+	if (!body || !body->s || body->len <= 0)
+		return 0;
+
+	b2bl_route_body_override.s = pkg_malloc(body->len);
+	if (!b2bl_route_body_override.s) {
+		LM_ERR("No more pkg memory\n");
+		return -1;
+	}
+
+	memcpy(b2bl_route_body_override.s, body->s, body->len);
+	b2bl_route_body_override.len = body->len;
+
+	return 0;
+}
+
+static int b2bl_refresh_route_ctx_body(struct sip_msg *msg)
+{
+	b2bl_route_body_live.s = NULL;
+	b2bl_route_body_live.len = 0;
+
+	if (b2bl_route_body_override.s) {
+		cur_route_ctx.body = &b2bl_route_body_override;
+		return 0;
+	}
+
+	if (msg && msg->content_length) {
+		if (get_body(msg, &b2bl_route_body_live) != 0) {
+			LM_ERR("cannot extract body\n");
+			return -1;
+		}
+	}
+
+	cur_route_ctx.body = &b2bl_route_body_live;
+	return 0;
+}
+
 struct to_body* get_b2bl_from(struct sip_msg* msg);
 
 int post_cb_sanity_check(b2bl_tuple_t **tuple, unsigned int hash_index, unsigned int local_index,
@@ -2155,7 +2207,16 @@ int b2b_handle_reply(struct sip_msg *msg, unsigned int flags)
 		return -1;
 	}
 
-	return _b2b_handle_reply(msg, NULL, NULL, NULL, flags) ? -1 : 1;
+	if (b2bl_refresh_route_ctx_body(msg) < 0)
+		return -1;
+
+	if (_b2b_handle_reply(msg, NULL, NULL, NULL, flags)) {
+		b2bl_clear_route_body_override();
+		return -1;
+	}
+
+	b2bl_clear_route_body_override();
+	return 1;
 }
 
 int b2b_pass_request(struct sip_msg *msg)
@@ -2166,7 +2227,30 @@ int b2b_pass_request(struct sip_msg *msg)
 		return -1;
 	}
 
-	return _b2b_pass_request(msg, NULL, NULL) ? -1 : 1;
+	if (b2bl_refresh_route_ctx_body(msg) < 0)
+		return -1;
+
+	if (_b2b_pass_request(msg, NULL, NULL)) {
+		b2bl_clear_route_body_override();
+		return -1;
+	}
+
+	b2bl_clear_route_body_override();
+	return 1;
+}
+
+int b2b_set_body(struct sip_msg *msg, str *body)
+{
+	if (!(cur_route_ctx.flags & (B2BL_RT_REQ_CTX|B2BL_RT_RPL_CTX))) {
+		LM_ERR("The 'b2b_set_body' function can only be used from the "
+			"b2b_logic dedicated request or reply routes\n");
+		return -1;
+	}
+
+	if (b2bl_set_route_body_override(body) < 0)
+		return -1;
+
+	return 1;
 }
 
 int b2b_send_reply(struct sip_msg *msg, int *code, str *reason, str *headers, str *body)
